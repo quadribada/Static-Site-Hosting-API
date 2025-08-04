@@ -4,8 +4,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+
+	"static-site-hosting/models"
 )
 
+// Updated to use models.Deployment
 func ListDeploymentsHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "GET required", http.StatusMethodNotAllowed)
@@ -19,9 +22,9 @@ func ListDeploymentsHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) 
 	}
 	defer rows.Close()
 
-	var deployments []Deployment
+	var deployments []models.Deployment
 	for rows.Next() {
-		var d Deployment
+		var d models.Deployment
 		err := rows.Scan(&d.ID, &d.Filename, &d.Timestamp, &d.Path)
 		if err != nil {
 			http.Error(w, "Failed to scan deployment", http.StatusInternalServerError)

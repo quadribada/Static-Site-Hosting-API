@@ -95,6 +95,18 @@ curl http://localhost:8080/{deployment-id}/index.html
 curl -X DELETE http://localhost:8080/deployments/{deployment-id}
 ```
 
+## File Structure
+Uploaded zip files preserve their internal directory structure. 
+
+Example:
+- Upload: `my-site.zip` containing `my-site/index.html`
+- Access: `GET /{deployment-id}/my-site/index.html`
+
+Breakdown:
+- http://localhost:8080/ - Your server
+- e99b140e-3866-42e9-be10-49640ed4bf2f/ - Your deployment ID
+- file-name/ - The folder inside your zip file
+- index.html - The file you want to access
 ## Run these E2E tests
 
   ```bash
@@ -107,14 +119,6 @@ curl -X DELETE http://localhost:8080/deployments/{deployment-id}
     # Run without performance tests (faster)
     go test ./cmd -v -short
   ```
-
-## File Structure
-Uploaded zip files preserve their internal directory structure. 
-
-Example:
-- Upload: `my-site.zip` containing `my-site/index.html`
-- Access: `GET /{site-id}/my-site/index.html`
-
 ## Technical Implementation
 
 - **Language**: Go 1.24+

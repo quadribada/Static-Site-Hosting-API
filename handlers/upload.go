@@ -9,20 +9,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"static-site-hosting/models"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 )
-
-type Deployment struct {
-	ID        string    `json:"id"`
-	Filename  string    `json:"filename"`
-	Timestamp time.Time `json:"timestamp"`
-	Path      string    `json:"path"`
-}
-
-var deployments []Deployment
 
 // Updated to use database
 func UploadHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
@@ -70,7 +61,7 @@ func UploadHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	// Save to database
 	_, err = db.Exec(
 		"INSERT INTO deployments (id, filename, timestamp, path) VALUES (?, ?, ?, ?)",
-		siteID, originalFilename, time.Now(), destDir,
+		siteID, originalFilename, models.NewDeployment(siteID, originalFilename, destDir).Timestamp, destDir,
 	)
 	if err != nil {
 		// Clean up files if DB insert fails
@@ -79,15 +70,11 @@ func UploadHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	d := Deployment{
-		ID:        siteID,
-		Filename:  originalFilename,
-		Timestamp: time.Now(),
-		Path:      destDir,
-	}
+	// Create deployment using models
+	deployment := models.NewDeployment(siteID, originalFilename, destDir)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(d)
+	json.NewEncoder(w).Encode(deployment)
 }
 
 func unzip(src, dest string) error {
@@ -142,9 +129,4 @@ func unzip(src, dest string) error {
 		}
 	}
 	return nil
-}
-
-// ResetDeployments clears the deployments slice for testing
-func ResetDeployments() {
-	deployments = []Deployment{}
 }

@@ -19,6 +19,7 @@ import (
 
 	"static-site-hosting/handlers"
 	"static-site-hosting/middleware"
+	"static-site-hosting/models"
 )
 
 func setupTestE2EDatabase(t *testing.T) *sql.DB {
@@ -282,7 +283,7 @@ func createTestSite() (*bytes.Buffer, error) {
 	return buf, w.Close()
 }
 
-func uploadTestSite(t *testing.T, serverURL string) handlers.Deployment {
+func uploadTestSite(t *testing.T, serverURL string) models.Deployment {
 	zipBuffer, err := createTestSite()
 	if err != nil {
 		t.Fatalf("Failed to create test site: %v", err)
@@ -313,7 +314,7 @@ func uploadTestSite(t *testing.T, serverURL string) handlers.Deployment {
 		t.Fatalf("Upload failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var deployment handlers.Deployment
+	var deployment models.Deployment
 	if err := json.NewDecoder(resp.Body).Decode(&deployment); err != nil {
 		t.Fatalf("Failed to decode upload response: %v", err)
 	}
@@ -321,7 +322,7 @@ func uploadTestSite(t *testing.T, serverURL string) handlers.Deployment {
 	return deployment
 }
 
-func listDeployments(t *testing.T, serverURL string) []handlers.Deployment {
+func listDeployments(t *testing.T, serverURL string) []models.Deployment {
 	resp, err := http.Get(serverURL + "/deployments")
 	if err != nil {
 		t.Fatalf("Failed to list deployments: %v", err)
@@ -332,7 +333,7 @@ func listDeployments(t *testing.T, serverURL string) []handlers.Deployment {
 		t.Fatalf("List deployments failed with status %d", resp.StatusCode)
 	}
 
-	var deployments []handlers.Deployment
+	var deployments []models.Deployment
 	if err := json.NewDecoder(resp.Body).Decode(&deployments); err != nil {
 		t.Fatalf("Failed to decode deployments response: %v", err)
 	}

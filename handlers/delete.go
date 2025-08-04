@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+
+	"static-site-hosting/models"
 )
 
 func DeleteDeploymentHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
@@ -25,7 +27,7 @@ func DeleteDeploymentHandler(w http.ResponseWriter, r *http.Request, db *sql.DB)
 	deploymentID := path
 
 	// Get deployment info before deleting
-	var deployment Deployment
+	var deployment models.Deployment
 	err := db.QueryRow("SELECT id, filename, timestamp, path FROM deployments WHERE id = ?", deploymentID).
 		Scan(&deployment.ID, &deployment.Filename, &deployment.Timestamp, &deployment.Path)
 

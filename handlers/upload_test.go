@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"static-site-hosting/models"
 	"strings"
 	"testing"
 
@@ -112,7 +113,7 @@ func TestUploadHandler(t *testing.T) {
 	}
 
 	// Parse response
-	var deployment Deployment
+	var deployment models.Deployment
 	err = json.NewDecoder(rr.Body).Decode(&deployment)
 	if err != nil {
 		t.Fatalf("failed to decode response: %v", err)
@@ -225,7 +226,7 @@ func TestUploadHandlerWithFilename(t *testing.T) {
 		t.Errorf("expected status 200, got %d. Response: %s", status, rr.Body.String())
 	}
 
-	var deployment Deployment
+	var deployment models.Deployment
 	err = json.NewDecoder(rr.Body).Decode(&deployment)
 	if err != nil {
 		t.Fatalf("failed to decode response: %v", err)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"static-site-hosting/models"
 	"testing"
 	"time"
 
@@ -16,17 +17,17 @@ func TestListDeploymentsHandler(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		deployments []Deployment
+		deployments []models.Deployment
 		expected    int
 	}{
 		{
 			name:        "empty deployments",
-			deployments: []Deployment{},
+			deployments: []models.Deployment{},
 			expected:    0,
 		},
 		{
 			name: "single deployment",
-			deployments: []Deployment{
+			deployments: []models.Deployment{
 				{
 					ID:        "test-123",
 					Filename:  "my-site.zip",
@@ -38,7 +39,7 @@ func TestListDeploymentsHandler(t *testing.T) {
 		},
 		{
 			name: "multiple deployments",
-			deployments: []Deployment{
+			deployments: []models.Deployment{
 				{
 					ID:        "test-123",
 					Filename:  "my-site.zip",
@@ -92,7 +93,7 @@ func TestListDeploymentsHandler(t *testing.T) {
 			}
 
 			// Parse response
-			var responseDeployments []Deployment
+			var responseDeployments []models.Deployment
 			err = json.NewDecoder(rr.Body).Decode(&responseDeployments)
 			if err != nil {
 				t.Fatalf("failed to decode response: %v", err)
@@ -108,12 +109,12 @@ func TestListDeploymentsHandler(t *testing.T) {
 			// regardless of order since database ordering may vary
 			if len(responseDeployments) > 0 {
 				// Create maps for easier comparison
-				expectedIDs := make(map[string]Deployment)
+				expectedIDs := make(map[string]models.Deployment)
 				for _, d := range tt.deployments {
 					expectedIDs[d.ID] = d
 				}
 
-				responseIDs := make(map[string]Deployment)
+				responseIDs := make(map[string]models.Deployment)
 				for _, d := range responseDeployments {
 					responseIDs[d.ID] = d
 				}
