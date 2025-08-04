@@ -1,0 +1,13 @@
+# Binaries
+/bin/
+/deployments/
+
+# Go build
+*.exe
+*.dll
+*.so
+*.dylib
+
+# IDE/editor
+.vscode/
+.idea/
