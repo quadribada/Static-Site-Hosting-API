@@ -32,22 +32,17 @@ To start the project, you need to have Go installed on your machine. You can dow
   go test ./...
   ```
 
-Provided in the `/examples` directory are a few example static sites that you can use to test the API you create. There are also a few extra folders (`/models` and `/services`) that you can use as a reference for how to structure your code but feel free to modify or ignore them as you see fit.
-
 ## Run these E2E tests
 
   ```bash
     # Run all E2E tests
     go test ./cmd -v
 
-    # Run just the main workflow test
+    # Run just the main workflow
     go test ./cmd -v -run TestE2EStaticSiteHostingWorkflow
 
     # Run without performance tests (faster)
     go test ./cmd -v -short
-
-    # Test with race condition detection
-    go test ./cmd -v -race
   ```
 
 ## File Structure

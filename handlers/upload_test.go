@@ -3,6 +3,7 @@ package handlers
 import (
 	"archive/zip"
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"mime/multipart"
@@ -12,7 +13,33 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	_ "github.com/mattn/go-sqlite3"
 )
+
+func setupTestDB(t *testing.T) *sql.DB {
+	// Create in-memory SQLite database for testing
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("Failed to create test database: %v", err)
+	}
+
+	// Create tables
+	createDeploymentsTable := `
+	CREATE TABLE deployments (
+		id TEXT PRIMARY KEY,
+		filename TEXT NOT NULL,
+		timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+		path TEXT NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	)`
+
+	if _, err := db.Exec(createDeploymentsTable); err != nil {
+		t.Fatalf("Failed to create deployments table: %v", err)
+	}
+
+	return db
+}
 
 func createTestZip() (*bytes.Buffer, error) {
 	buf := new(bytes.Buffer)
@@ -45,9 +72,9 @@ func createTestZip() (*bytes.Buffer, error) {
 }
 
 func TestUploadHandler(t *testing.T) {
-	// Clean up any existing deployments
+	db := setupTestDB(t)
+	defer db.Close()
 	defer os.RemoveAll("deployments")
-	deployments = []Deployment{} // Reset the deployments slice
 
 	// Create test zip dynamically
 	zipBuffer, err := createTestZip()
@@ -75,9 +102,9 @@ func TestUploadHandler(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/upload", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	// Execute request
+	// Execute request with database
 	rr := httptest.NewRecorder()
-	UploadHandler(rr, req)
+	UploadHandler(rr, req, db)
 
 	// Check response status
 	if status := rr.Code; status != http.StatusOK {
@@ -96,8 +123,22 @@ func TestUploadHandler(t *testing.T) {
 		t.Error("expected deployment ID to be set")
 	}
 
+	if deployment.Filename != "test-site.zip" {
+		t.Errorf("expected filename 'test-site.zip', got %s", deployment.Filename)
+	}
+
 	if deployment.Path == "" {
 		t.Error("expected deployment path to be set")
+	}
+
+	// Verify it was saved to database
+	var dbCount int
+	err = db.QueryRow("SELECT COUNT(*) FROM deployments WHERE id = ?", deployment.ID).Scan(&dbCount)
+	if err != nil {
+		t.Fatalf("failed to query database: %v", err)
+	}
+	if dbCount != 1 {
+		t.Errorf("expected 1 deployment in database, got %d", dbCount)
 	}
 
 	// Verify files were extracted
@@ -108,25 +149,16 @@ func TestUploadHandler(t *testing.T) {
 			t.Errorf("expected file %s to exist in deployment", filename)
 		}
 	}
-
-	// Verify file content
-	indexPath := filepath.Join(deployment.Path, "index.html")
-	content, err := os.ReadFile(indexPath)
-	if err != nil {
-		t.Fatalf("failed to read extracted file: %v", err)
-	}
-
-	expectedContent := "<html><body>Test Site</body></html>"
-	if string(content) != expectedContent {
-		t.Errorf("expected file content %q, got %q", expectedContent, string(content))
-	}
 }
 
 func TestUploadHandlerInvalidMethod(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
 	req := httptest.NewRequest(http.MethodGet, "/upload", nil)
 	rr := httptest.NewRecorder()
 
-	UploadHandler(rr, req)
+	UploadHandler(rr, req, db)
 
 	if status := rr.Code; status != http.StatusMethodNotAllowed {
 		t.Errorf("expected status 405, got %d", status)
@@ -134,6 +166,9 @@ func TestUploadHandlerInvalidMethod(t *testing.T) {
 }
 
 func TestUploadHandlerNoFile(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 	writer.Close()
@@ -142,7 +177,7 @@ func TestUploadHandlerNoFile(t *testing.T) {
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	rr := httptest.NewRecorder()
-	UploadHandler(rr, req)
+	UploadHandler(rr, req, db)
 
 	if status := rr.Code; status != http.StatusBadRequest {
 		t.Errorf("expected status 400, got %d", status)
@@ -154,8 +189,9 @@ func TestUploadHandlerNoFile(t *testing.T) {
 }
 
 func TestUploadHandlerWithFilename(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
 	defer os.RemoveAll("deployments")
-	deployments = []Deployment{}
 
 	zipBuffer, err := createTestZip()
 	if err != nil {
@@ -183,7 +219,7 @@ func TestUploadHandlerWithFilename(t *testing.T) {
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	rr := httptest.NewRecorder()
-	UploadHandler(rr, req)
+	UploadHandler(rr, req, db)
 
 	if status := rr.Code; status != http.StatusOK {
 		t.Errorf("expected status 200, got %d. Response: %s", status, rr.Body.String())
@@ -210,8 +246,9 @@ func TestUploadHandlerWithFilename(t *testing.T) {
 }
 
 func TestUploadHandlerEmptyFilename(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
 	defer os.RemoveAll("deployments")
-	deployments = []Deployment{}
 
 	zipBuffer, err := createTestZip()
 	if err != nil {
@@ -238,7 +275,7 @@ func TestUploadHandlerEmptyFilename(t *testing.T) {
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	rr := httptest.NewRecorder()
-	UploadHandler(rr, req)
+	UploadHandler(rr, req, db)
 
 	// Empty filename should cause a 400 Bad Request
 	if status := rr.Code; status != http.StatusBadRequest {

@@ -6,12 +6,13 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 func TestListDeploymentsHandler(t *testing.T) {
-	// Save original deployments and restore after test
-	originalDeployments := deployments
-	defer func() { deployments = originalDeployments }()
+	db := setupTestDB(t)
+	defer db.Close()
 
 	tests := []struct {
 		name        string
@@ -57,13 +58,27 @@ func TestListDeploymentsHandler(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Set up test data
-			deployments = tt.deployments
+			// Clear database and insert test data
+			_, err := db.Exec("DELETE FROM deployments")
+			if err != nil {
+				t.Fatalf("failed to clear database: %v", err)
+			}
+
+			// Insert test deployments into database
+			for _, deployment := range tt.deployments {
+				_, err := db.Exec(
+					"INSERT INTO deployments (id, filename, timestamp, path) VALUES (?, ?, ?, ?)",
+					deployment.ID, deployment.Filename, deployment.Timestamp, deployment.Path,
+				)
+				if err != nil {
+					t.Fatalf("failed to insert test deployment: %v", err)
+				}
+			}
 
 			req := httptest.NewRequest(http.MethodGet, "/deployments", nil)
 			rr := httptest.NewRecorder()
 
-			ListDeploymentsHandler(rr, req)
+			ListDeploymentsHandler(rr, req, db)
 
 			// Check status code
 			if rr.Code != http.StatusOK {
@@ -78,7 +93,7 @@ func TestListDeploymentsHandler(t *testing.T) {
 
 			// Parse response
 			var responseDeployments []Deployment
-			err := json.NewDecoder(rr.Body).Decode(&responseDeployments)
+			err = json.NewDecoder(rr.Body).Decode(&responseDeployments)
 			if err != nil {
 				t.Fatalf("failed to decode response: %v", err)
 			}
@@ -89,20 +104,53 @@ func TestListDeploymentsHandler(t *testing.T) {
 			}
 
 			// Verify deployment data matches
-			for i, deployment := range responseDeployments {
-				if i >= len(tt.deployments) {
-					break
+			// Note: We just check that all expected deployments are present,
+			// regardless of order since database ordering may vary
+			if len(responseDeployments) > 0 {
+				// Create maps for easier comparison
+				expectedIDs := make(map[string]Deployment)
+				for _, d := range tt.deployments {
+					expectedIDs[d.ID] = d
 				}
-				expected := tt.deployments[i]
 
-				if deployment.ID != expected.ID {
-					t.Errorf("deployment %d: expected ID %s, got %s", i, expected.ID, deployment.ID)
+				responseIDs := make(map[string]Deployment)
+				for _, d := range responseDeployments {
+					responseIDs[d.ID] = d
 				}
 
-				if deployment.Path != expected.Path {
-					t.Errorf("deployment %d: expected Path %s, got %s", i, expected.Path, deployment.Path)
+				// Check that all expected deployments are present
+				for expectedID, expectedDeployment := range expectedIDs {
+					responseDeployment, exists := responseIDs[expectedID]
+					if !exists {
+						t.Errorf("expected deployment %s not found in response", expectedID)
+						continue
+					}
+
+					if responseDeployment.Filename != expectedDeployment.Filename {
+						t.Errorf("deployment %s: expected Filename %s, got %s",
+							expectedID, expectedDeployment.Filename, responseDeployment.Filename)
+					}
+
+					if responseDeployment.Path != expectedDeployment.Path {
+						t.Errorf("deployment %s: expected Path %s, got %s",
+							expectedID, expectedDeployment.Path, responseDeployment.Path)
+					}
 				}
 			}
 		})
+	}
+}
+
+func TestListDeploymentsHandlerInvalidMethod(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/deployments", nil)
+	rr := httptest.NewRecorder()
+
+	ListDeploymentsHandler(rr, req, db)
+
+	if status := rr.Code; status != http.StatusMethodNotAllowed {
+		t.Errorf("expected status 405, got %d", status)
 	}
 }

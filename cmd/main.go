@@ -30,7 +30,7 @@ func main() {
 	defer db.Close()
 
 	// Setup HTTP routes
-	mux := setupRoutes()
+	mux := setupRoutes(db)
 
 	// Apply middleware
 	wrappedMux := middleware.LoggingMiddleware(mux)
@@ -74,11 +74,10 @@ func setupDatabase() (*sql.DB, error) {
 }
 
 func createTables(db *sql.DB) error {
-	// Create deployments table for persistent storage
-	// (Currently you're using in-memory slice, but this prepares for DB storage)
 	createDeploymentsTable := `
 	CREATE TABLE IF NOT EXISTS deployments (
 		id TEXT PRIMARY KEY,
+		filename TEXT NOT NULL,
 		timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
 		path TEXT NOT NULL,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -102,12 +101,19 @@ func createTables(db *sql.DB) error {
 	return nil
 }
 
-func setupRoutes() *http.ServeMux {
+func setupRoutes(db *sql.DB) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	// API endpoints
-	mux.HandleFunc("/upload", handlers.UploadHandler)
-	mux.HandleFunc("/deployments", handlers.ListDeploymentsHandler)
+	mux.HandleFunc("/upload", func(w http.ResponseWriter, r *http.Request) {
+		handlers.UploadHandler(w, r, db)
+	})
+	mux.HandleFunc("/deployments", func(w http.ResponseWriter, r *http.Request) {
+		handlers.ListDeploymentsHandler(w, r, db)
+	})
+	mux.HandleFunc("/deployments/", func(w http.ResponseWriter, r *http.Request) {
+		handlers.DeleteDeploymentHandler(w, r, db)
+	})
 	mux.HandleFunc("/hello-world", handlers.HelloWorldHandler)
 
 	// Static file serving - this should be last since it's a catch-all

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"archive/zip"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,21 +24,21 @@ type Deployment struct {
 
 var deployments []Deployment
 
-func UploadHandler(w http.ResponseWriter, r *http.Request) {
+// Updated to use database
+func UploadHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST required", http.StatusMethodNotAllowed)
 		return
 	}
 
-	r.ParseMultipartForm(20 << 20)          // 20 MB max
-	file, header, err := r.FormFile("file") // Now we capture the header too
+	r.ParseMultipartForm(20 << 20)
+	file, header, err := r.FormFile("file")
 	if err != nil {
 		http.Error(w, "Invalid file", http.StatusBadRequest)
 		return
 	}
 	defer file.Close()
 
-	// Get the original filename
 	originalFilename := header.Filename
 	if originalFilename == "" {
 		originalFilename = "unknown.zip"
@@ -66,13 +67,24 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Save to database
+	_, err = db.Exec(
+		"INSERT INTO deployments (id, filename, timestamp, path) VALUES (?, ?, ?, ?)",
+		siteID, originalFilename, time.Now(), destDir,
+	)
+	if err != nil {
+		// Clean up files if DB insert fails
+		os.RemoveAll(destDir)
+		http.Error(w, "Failed to save deployment", http.StatusInternalServerError)
+		return
+	}
+
 	d := Deployment{
 		ID:        siteID,
-		Filename:  originalFilename, // Store the original filename
+		Filename:  originalFilename,
 		Timestamp: time.Now(),
 		Path:      destDir,
 	}
-	deployments = append(deployments, d)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(d)

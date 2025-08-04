@@ -3,6 +3,7 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,18 +15,68 @@ import (
 	"testing"
 	"time"
 
+	_ "github.com/mattn/go-sqlite3"
+
 	"static-site-hosting/handlers"
 	"static-site-hosting/middleware"
 )
+
+func setupTestE2EDatabase(t *testing.T) *sql.DB {
+	// Create in-memory SQLite database for testing
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("Failed to create test database: %v", err)
+	}
+
+	// Create tables
+	createDeploymentsTable := `
+	CREATE TABLE deployments (
+		id TEXT PRIMARY KEY,
+		filename TEXT NOT NULL,
+		timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+		path TEXT NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	)`
+
+	if _, err := db.Exec(createDeploymentsTable); err != nil {
+		t.Fatalf("Failed to create deployments table: %v", err)
+	}
+
+	return db
+}
+
+func setupE2ERoutes(db *sql.DB) *http.ServeMux {
+	mux := http.NewServeMux()
+
+	// API endpoints with database
+	mux.HandleFunc("/upload", func(w http.ResponseWriter, r *http.Request) {
+		handlers.UploadHandler(w, r, db)
+	})
+	mux.HandleFunc("/deployments", func(w http.ResponseWriter, r *http.Request) {
+		handlers.ListDeploymentsHandler(w, r, db)
+	})
+	mux.HandleFunc("/deployments/", func(w http.ResponseWriter, r *http.Request) {
+		handlers.DeleteDeploymentHandler(w, r, db)
+	})
+	mux.HandleFunc("/hello-world", handlers.HelloWorldHandler)
+
+	// Static file serving - this should be last since it's a catch-all
+	mux.Handle("/", handlers.StaticFileHandler())
+
+	return mux
+}
 
 // E2E Test that simulates the complete user workflow
 func TestE2EStaticSiteHostingWorkflow(t *testing.T) {
 	// Setup: Clean state
 	defer os.RemoveAll("deployments")
-	handlers.ResetDeployments() // You'll need to add this function to handlers
 
-	// Create test server
-	mux := setupRoutes()
+	// Create test database
+	db := setupTestE2EDatabase(t)
+	defer db.Close()
+
+	// Create test server with database
+	mux := setupE2ERoutes(db)
 	server := httptest.NewServer(middleware.LoggingMiddleware(mux))
 	defer server.Close()
 
@@ -76,14 +127,59 @@ func TestE2EStaticSiteHostingWorkflow(t *testing.T) {
 		t.Log("Step 7: Test independent site access")
 		testStaticFileAccess(t, server.URL, deployment.ID)
 		testStaticFileAccess(t, server.URL, deployment2.ID)
+
+		// Step 8: Test deletion functionality
+		t.Log("Step 8: Test deployment deletion")
+		deleteURL := fmt.Sprintf("%s/deployments/%s", server.URL, deployment.ID)
+		req, err := http.NewRequest(http.MethodDelete, deleteURL, nil)
+		if err != nil {
+			t.Fatalf("Failed to create delete request: %v", err)
+		}
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("Delete request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("Expected 200 for delete, got %d", resp.StatusCode)
+		}
+
+		// Step 9: Verify deployment was deleted
+		t.Log("Step 9: Verify deployment deleted")
+		deployments = listDeployments(t, server.URL)
+		if len(deployments) != 1 {
+			t.Errorf("Expected 1 deployment after deletion, got %d", len(deployments))
+		}
+
+		// Verify the remaining deployment is the second one
+		if len(deployments) > 0 && deployments[0].ID != deployment2.ID {
+			t.Errorf("Expected remaining deployment to be %s, got %s", deployment2.ID, deployments[0].ID)
+		}
+
+		// Step 10: Verify deleted site is no longer accessible
+		t.Log("Step 10: Verify deleted site inaccessible")
+		resp, err = http.Get(server.URL + "/" + deployment.ID + "/index.html")
+		if err != nil {
+			t.Fatalf("Failed to test deleted site access: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("Expected 404 for deleted site, got %d", resp.StatusCode)
+		}
 	})
 }
 
 func TestE2EErrorScenarios(t *testing.T) {
 	defer os.RemoveAll("deployments")
-	handlers.ResetDeployments()
 
-	mux := setupRoutes()
+	db := setupTestE2EDatabase(t)
+	defer db.Close()
+
+	mux := setupE2ERoutes(db)
 	server := httptest.NewServer(middleware.LoggingMiddleware(mux))
 	defer server.Close()
 
@@ -135,6 +231,25 @@ func TestE2EErrorScenarios(t *testing.T) {
 
 		if resp.StatusCode != http.StatusNotFound {
 			t.Errorf("Expected 404 for non-existent file, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Delete Non-existent Deployment", func(t *testing.T) {
+		deleteURL := fmt.Sprintf("%s/deployments/nonexistent-id", server.URL)
+		req, err := http.NewRequest(http.MethodDelete, deleteURL, nil)
+		if err != nil {
+			t.Fatalf("Failed to create delete request: %v", err)
+		}
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("Delete request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("Expected 404 for deleting non-existent deployment, got %d", resp.StatusCode)
 		}
 	})
 }
@@ -272,9 +387,11 @@ func TestE2EPerformance(t *testing.T) {
 	}
 
 	defer os.RemoveAll("deployments")
-	handlers.ResetDeployments()
 
-	mux := setupRoutes()
+	db := setupTestE2EDatabase(t)
+	defer db.Close()
+
+	mux := setupE2ERoutes(db)
 	server := httptest.NewServer(middleware.LoggingMiddleware(mux))
 	defer server.Close()
 
