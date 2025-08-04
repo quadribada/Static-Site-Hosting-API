@@ -152,3 +152,101 @@ func TestUploadHandlerNoFile(t *testing.T) {
 		t.Error("expected 'Invalid file' error message")
 	}
 }
+
+func TestUploadHandlerWithFilename(t *testing.T) {
+	defer os.RemoveAll("deployments")
+	deployments = []Deployment{}
+
+	zipBuffer, err := createTestZip()
+	if err != nil {
+		t.Fatalf("failed to create test zip: %v", err)
+	}
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Use a specific filename to test
+	testFilename := "my-awesome-site.zip"
+	part, err := writer.CreateFormFile("file", testFilename)
+	if err != nil {
+		t.Fatalf("failed to create form file: %v", err)
+	}
+
+	_, err = io.Copy(part, zipBuffer)
+	if err != nil {
+		t.Fatalf("failed to copy zip to form: %v", err)
+	}
+
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/upload", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	rr := httptest.NewRecorder()
+	UploadHandler(rr, req)
+
+	if status := rr.Code; status != http.StatusOK {
+		t.Errorf("expected status 200, got %d. Response: %s", status, rr.Body.String())
+	}
+
+	var deployment Deployment
+	err = json.NewDecoder(rr.Body).Decode(&deployment)
+	if err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	// Test the new filename field
+	if deployment.Filename != testFilename {
+		t.Errorf("expected filename %s, got %s", testFilename, deployment.Filename)
+	}
+
+	if deployment.ID == "" {
+		t.Error("expected deployment ID to be set")
+	}
+
+	if deployment.Path == "" {
+		t.Error("expected deployment path to be set")
+	}
+}
+
+func TestUploadHandlerEmptyFilename(t *testing.T) {
+	defer os.RemoveAll("deployments")
+	deployments = []Deployment{}
+
+	zipBuffer, err := createTestZip()
+	if err != nil {
+		t.Fatalf("failed to create test zip: %v", err)
+	}
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Use empty filename - this should cause the upload to fail
+	part, err := writer.CreateFormFile("file", "")
+	if err != nil {
+		t.Fatalf("failed to create form file: %v", err)
+	}
+
+	_, err = io.Copy(part, zipBuffer)
+	if err != nil {
+		t.Fatalf("failed to copy zip to form: %v", err)
+	}
+
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/upload", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	rr := httptest.NewRecorder()
+	UploadHandler(rr, req)
+
+	// Empty filename should cause a 400 Bad Request
+	if status := rr.Code; status != http.StatusBadRequest {
+		t.Errorf("expected status 400 for empty filename, got %d", status)
+	}
+
+	// Verify we get the expected error message
+	if !strings.Contains(rr.Body.String(), "Invalid file") {
+		t.Errorf("expected 'Invalid file' error message, got: %s", rr.Body.String())
+	}
+}

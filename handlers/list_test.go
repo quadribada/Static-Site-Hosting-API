@@ -28,6 +28,7 @@ func TestListDeploymentsHandler(t *testing.T) {
 			deployments: []Deployment{
 				{
 					ID:        "test-123",
+					Filename:  "my-site.zip",
 					Timestamp: time.Now(),
 					Path:      "deployments/test-123",
 				},
@@ -39,11 +40,13 @@ func TestListDeploymentsHandler(t *testing.T) {
 			deployments: []Deployment{
 				{
 					ID:        "test-123",
+					Filename:  "my-site.zip",
 					Timestamp: time.Now(),
 					Path:      "deployments/test-123",
 				},
 				{
 					ID:        "test-456",
+					Filename:  "another-site.zip",
 					Timestamp: time.Now(),
 					Path:      "deployments/test-456",
 				},

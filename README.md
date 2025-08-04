@@ -49,3 +49,10 @@ Provided in the `/examples` directory are a few example static sites that you ca
     # Test with race condition detection
     go test ./cmd -v -race
   ```
+
+## File Structure
+Uploaded zip files preserve their internal directory structure. 
+
+Example:
+- Upload: `my-site.zip` containing `my-site/index.html`
+- Access: `GET /{site-id}/my-site/index.html`

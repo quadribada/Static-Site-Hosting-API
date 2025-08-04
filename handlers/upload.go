@@ -16,6 +16,7 @@ import (
 
 type Deployment struct {
 	ID        string    `json:"id"`
+	Filename  string    `json:"filename"`
 	Timestamp time.Time `json:"timestamp"`
 	Path      string    `json:"path"`
 }
@@ -28,30 +29,36 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	r.ParseMultipartForm(20 << 20) // 20 MB max
-	file, _, err := r.FormFile("file")
+	r.ParseMultipartForm(20 << 20)          // 20 MB max
+	file, header, err := r.FormFile("file") // Now we capture the header too
 	if err != nil {
 		http.Error(w, "Invalid file", http.StatusBadRequest)
 		return
 	}
 	defer file.Close()
 
+	// Get the original filename
+	originalFilename := header.Filename
+	if originalFilename == "" {
+		originalFilename = "unknown.zip"
+	}
+
 	siteID := uuid.New().String()
-	tempZip := fmt.Sprintf("temp-%s.zip", siteID) // Use unique temp file name
+	tempZip := fmt.Sprintf("temp-%s.zip", siteID)
 	dst, err := os.Create(tempZip)
 	if err != nil {
 		http.Error(w, "Could not create temp file", http.StatusInternalServerError)
 		return
 	}
 	defer dst.Close()
-	defer os.Remove(tempZip) // Ensure cleanup even if unzip fails
+	defer os.Remove(tempZip)
 
 	_, err = io.Copy(dst, file)
 	if err != nil {
 		http.Error(w, "Failed to save uploaded file", http.StatusInternalServerError)
 		return
 	}
-	dst.Close() // Close before reading
+	dst.Close()
 
 	destDir := filepath.Join("deployments", siteID)
 	if err := unzip(tempZip, destDir); err != nil {
@@ -61,6 +68,7 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	d := Deployment{
 		ID:        siteID,
+		Filename:  originalFilename, // Store the original filename
 		Timestamp: time.Now(),
 		Path:      destDir,
 	}
