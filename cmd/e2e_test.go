@@ -53,11 +53,27 @@ func setupE2ERoutes(db *sql.DB) *http.ServeMux {
 	mux.HandleFunc("/upload", func(w http.ResponseWriter, r *http.Request) {
 		handlers.UploadHandler(w, r, db)
 	})
+
+	// Handle both list (GET) and delete all (DELETE) on /deployments
 	mux.HandleFunc("/deployments", func(w http.ResponseWriter, r *http.Request) {
-		handlers.ListDeploymentsHandler(w, r, db)
+		switch r.Method {
+		case http.MethodGet:
+			handlers.ListDeploymentsHandler(w, r, db)
+		case http.MethodDelete:
+			handlers.DeleteAllDeploymentsHandler(w, r, db)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
 	})
+
 	mux.HandleFunc("/deployments/", func(w http.ResponseWriter, r *http.Request) {
 		handlers.DeleteDeploymentHandler(w, r, db)
+	})
+	mux.HandleFunc("/rollback/", func(w http.ResponseWriter, r *http.Request) {
+		handlers.RollbackHandler(w, r, db)
+	})
+	mux.HandleFunc("/reset", func(w http.ResponseWriter, r *http.Request) {
+		handlers.ResetSystemHandler(w, r, db)
 	})
 	mux.HandleFunc("/hello-world", handlers.HelloWorldHandler)
 
@@ -160,9 +176,58 @@ func TestE2EStaticSiteHostingWorkflow(t *testing.T) {
 			t.Errorf("Expected remaining deployment to be %s, got %s", deployment2.ID, deployments[0].ID)
 		}
 
-		// Step 10: Verify deleted site is no longer accessible
-		t.Log("Step 10: Verify deleted site inaccessible")
-		resp, err = http.Get(server.URL + "/" + deployment.ID + "/index.html")
+		// Step 10: Test rollback functionality
+		t.Log("Step 10: Test rollback functionality")
+		rollbackURL := fmt.Sprintf("%s/rollback/%s", server.URL, deployment2.ID)
+		req, err = http.NewRequest(http.MethodPost, rollbackURL, nil)
+		if err != nil {
+			t.Fatalf("Failed to create rollback request: %v", err)
+		}
+
+		resp, err = client.Do(req)
+		if err != nil {
+			t.Fatalf("Rollback request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("Expected 200 for rollback, got %d", resp.StatusCode)
+		}
+
+		// Step 11: Verify rollback created new deployment
+		t.Log("Step 11: Verify rollback created new deployment")
+		deployments = listDeployments(t, server.URL)
+		if len(deployments) != 2 {
+			t.Errorf("Expected 2 deployments after rollback, got %d", len(deployments))
+		}
+
+		// Step 12: Test delete all functionality
+		t.Log("Step 12: Test delete all deployments")
+		deleteAllReq, err := http.NewRequest(http.MethodDelete, server.URL+"/deployments", nil)
+		if err != nil {
+			t.Fatalf("Failed to create delete all request: %v", err)
+		}
+
+		resp, err = client.Do(deleteAllReq)
+		if err != nil {
+			t.Fatalf("Delete all request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("Expected 200 for delete all, got %d", resp.StatusCode)
+		}
+
+		// Step 13: Verify all deployments were deleted
+		t.Log("Step 13: Verify all deployments deleted")
+		deployments = listDeployments(t, server.URL)
+		if len(deployments) != 0 {
+			t.Errorf("Expected 0 deployments after delete all, got %d", len(deployments))
+		}
+
+		// Step 14: Verify deleted site is no longer accessible
+		t.Log("Step 14: Verify all deleted sites inaccessible")
+		resp, err = http.Get(server.URL + "/" + deployment2.ID + "/index.html")
 		if err != nil {
 			t.Fatalf("Failed to test deleted site access: %v", err)
 		}
@@ -235,22 +300,65 @@ func TestE2EErrorScenarios(t *testing.T) {
 		}
 	})
 
-	t.Run("Delete Non-existent Deployment", func(t *testing.T) {
-		deleteURL := fmt.Sprintf("%s/deployments/nonexistent-id", server.URL)
-		req, err := http.NewRequest(http.MethodDelete, deleteURL, nil)
+	t.Run("Delete All Non-existent Deployments", func(t *testing.T) {
+		// Clean up any existing deployments first
+		db.Exec("DELETE FROM deployments")
+		os.RemoveAll("deployments")
+
+		// Test delete all when no deployments exist
+		deleteAllReq, err := http.NewRequest(http.MethodDelete, server.URL+"/deployments", nil)
 		if err != nil {
-			t.Fatalf("Failed to create delete request: %v", err)
+			t.Fatalf("Failed to create delete all request: %v", err)
 		}
 
 		client := &http.Client{}
-		resp, err := client.Do(req)
+		resp, err := client.Do(deleteAllReq)
 		if err != nil {
-			t.Fatalf("Delete request failed: %v", err)
+			t.Fatalf("Delete all request failed: %v", err)
 		}
 		defer resp.Body.Close()
 
-		if resp.StatusCode != http.StatusNotFound {
-			t.Errorf("Expected 404 for deleting non-existent deployment, got %d", resp.StatusCode)
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("Expected 200 for delete all empty, got %d", resp.StatusCode)
+		}
+
+		// Parse response to check message
+		var response map[string]interface{}
+		json.NewDecoder(resp.Body).Decode(&response)
+		if response["message"] != "No deployments to delete" {
+			t.Errorf("Expected 'No deployments to delete' message, got: %v", response["message"])
+		}
+	})
+
+	t.Run("Test System Reset", func(t *testing.T) {
+		// Clean up any existing deployments first, then add one to test reset
+		db.Exec("DELETE FROM deployments")
+		os.RemoveAll("deployments")
+
+		// Upload a site to have something to reset
+		uploadTestSite(t, server.URL)
+
+		// Test system reset
+		resetReq, err := http.NewRequest(http.MethodPost, server.URL+"/reset", nil)
+		if err != nil {
+			t.Fatalf("Failed to create reset request: %v", err)
+		}
+
+		client := &http.Client{}
+		resp, err := client.Do(resetReq)
+		if err != nil {
+			t.Fatalf("Reset request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("Expected 200 for reset, got %d", resp.StatusCode)
+		}
+
+		// Verify no deployments remain
+		deployments := listDeployments(t, server.URL)
+		if len(deployments) != 0 {
+			t.Errorf("Expected 0 deployments after reset, got %d", len(deployments))
 		}
 	})
 }

@@ -1,7 +1,5 @@
 # Static Site Hosting API Task
 
-Static site hosting is a way to serve websites made entirely of pre-built files—typically HTML, CSS, and JavaScript—directly to users’ browsers, without any server-side processing or database queries. This approach is ideal for sites that don’t require dynamic content generation on the server, such as portfolios, documentation, landing pages, or marketing sites. Because there’s no backend logic or databases involved, static site hosting platforms focus on efficiently storing, deploying, and serving these static assets, often leveraging features like automated deployments, version tracking, and preview URLs to streamline the workflow for developers and content creators.
-
 The goal of this assignment is to build a static site hosting platform backend that can manage, deploy, and serve these static websites. The server should support uploading a zip file with static assets (HTML, CSS, and JS) and serve them. The provided API should support tracking deployments and add metadata about the site, but you are encouraged to explore other areas such as preview URLs, triggering rollbacks, etc…
 
 ## Getting Started
@@ -50,6 +48,9 @@ To start the project, you need to have Go installed on your machine. You can dow
 - **List Deployments**: `GET /deployments` returns all deployments with metadata
 - **Deployment History**: Persistent storage with timestamps and original filenames
 - **Delete Deployments**: `DELETE /deployments/{id}` removes both database records and files
+- **Delete All Deployments**: `DELETE /deployments` removes all deployments and files
+- **Rollback Support**: `POST /rollback/{id}` creates new deployment from previous version
+- **System Reset**: `POST /reset` completely clears all deployments (nuclear option)
 - **Atomic Operations**: Database and filesystem stay in sync
 
 ### Data Persistence
@@ -76,6 +77,9 @@ To start the project, you need to have Go installed on your machine. You can dow
 | `POST` | `/upload` | Upload a zip file containing static site |
 | `GET` | `/deployments` | List all deployments with metadata |
 | `DELETE` | `/deployments/{id}` | Delete a specific deployment |
+| `DELETE` | `/deployments` | Delete ALL deployments and files |
+| `POST` | `/rollback/{id}` | Create new deployment from previous version |
+| `POST` | `/reset` | Reset entire system (nuclear option) |
 | `GET` | `/{deployment-id}/{file-path}` | Serve static files |
 | `GET` | `/hello-world` | Health check endpoint |
 
@@ -84,18 +88,33 @@ To start the project, you need to have Go installed on your machine. You can dow
 ```bash
 # Upload a site
 curl -X POST -F "file=@my-site.zip" http://localhost:8080/upload
+# Returns: {"id":"abc123...","filename":"my-site.zip",timestamp, path...}
 
 # List all deployments
 curl http://localhost:8080/deployments
 
-# Access your site
-curl http://localhost:8080/{deployment-id}/index.html
+# Access your site (URL depends on your zip structure)
+# For flat zip: my-site.zip/index.html
+curl http://localhost:8080/abc123.../index.html
 
-# Delete a deployment
-curl -X DELETE http://localhost:8080/deployments/{deployment-id}
+# For nested zip: my-site.zip/my-site/index.html  
+curl http://localhost:8080/abc123.../my-site/index.html
+
+# Rollback to a previous deployment
+curl -X POST http://localhost:8080/rollback/abc123...
+# Creates new deployment with same files as abc123...
+
+# Delete a specific deployment
+curl -X DELETE http://localhost:8080/deployments/abc123...
+
+# Delete ALL deployments
+curl -X DELETE http://localhost:8080/deployments
+
+# Reset entire system (nuclear option)
+curl -X POST http://localhost:8080/reset
 ```
 
-## File Structure
+## File Structure Note
 Uploaded zip files preserve their internal directory structure. 
 
 Example:
@@ -107,6 +126,7 @@ Breakdown:
 - e99b140e-3866-42e9-be10-49640ed4bf2f/ - Your deployment ID
 - file-name/ - The folder inside your zip file
 - index.html - The file you want to access
+
 ## Run these E2E tests
 
   ```bash

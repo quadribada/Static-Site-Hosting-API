@@ -35,10 +35,13 @@ func main() {
 	// Apply middleware
 	wrappedMux := middleware.LoggingMiddleware(mux)
 
-	log.Println("Server starting on :8080")
 	log.Println("Endpoints available:")
 	log.Println("  POST /upload - Upload a zip file")
 	log.Println("  GET /deployments - List all deployments")
+	log.Println("  DELETE /deployments - Delete ALL deployments")
+	log.Println("  DELETE /deployments/{id} - Delete a deployment")
+	log.Println("  POST /rollback/{id} - Rollback to a previous deployment")
+	log.Println("  POST /reset - Reset entire system (nuclear option)")
 	log.Println("  GET /{site-id}/{file-path} - Serve static files")
 	log.Println("  GET /hello-world - Test endpoint")
 
@@ -108,11 +111,27 @@ func setupRoutes(db *sql.DB) *http.ServeMux {
 	mux.HandleFunc("/upload", func(w http.ResponseWriter, r *http.Request) {
 		handlers.UploadHandler(w, r, db)
 	})
+
+	// Handle both list (GET) and delete all (DELETE) on /deployments
 	mux.HandleFunc("/deployments", func(w http.ResponseWriter, r *http.Request) {
-		handlers.ListDeploymentsHandler(w, r, db)
+		switch r.Method {
+		case http.MethodGet:
+			handlers.ListDeploymentsHandler(w, r, db)
+		case http.MethodDelete:
+			handlers.DeleteAllDeploymentsHandler(w, r, db)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
 	})
+
 	mux.HandleFunc("/deployments/", func(w http.ResponseWriter, r *http.Request) {
 		handlers.DeleteDeploymentHandler(w, r, db)
+	})
+	mux.HandleFunc("/rollback/", func(w http.ResponseWriter, r *http.Request) {
+		handlers.RollbackHandler(w, r, db)
+	})
+	mux.HandleFunc("/reset", func(w http.ResponseWriter, r *http.Request) {
+		handlers.ResetSystemHandler(w, r, db)
 	})
 	mux.HandleFunc("/hello-world", handlers.HelloWorldHandler)
 
