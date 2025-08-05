@@ -90,7 +90,7 @@ func createTables(db *sql.DB) error {
 		return err
 	}
 
-	// Keep the example table for now
+	// Keeping the example table for now
 	createExampleTable := `
 	CREATE TABLE IF NOT EXISTS example (
 		id INTEGER PRIMARY KEY, 

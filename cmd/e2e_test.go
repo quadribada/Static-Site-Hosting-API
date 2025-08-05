@@ -98,21 +98,21 @@ func TestE2EStaticSiteHostingWorkflow(t *testing.T) {
 	defer server.Close()
 
 	t.Run("Complete Workflow", func(t *testing.T) {
-		// Step 1: Verify no deployments initially
+		// Verify no deployments initially
 		t.Log("Step 1: Check initial empty state")
 		deployments := listDeployments(t, server.URL)
 		if len(deployments) != 0 {
 			t.Errorf("Expected 0 deployments initially, got %d", len(deployments))
 		}
 
-		// Step 2: Upload a site
+		// Upload a site
 		t.Log("Step 2: Upload test site")
 		deployment := uploadTestSite(t, server.URL)
 		if deployment.ID == "" {
 			t.Fatal("Expected deployment ID to be set")
 		}
 
-		// Step 3: Verify deployment appears in list
+		// Verify deployment appears in list
 		t.Log("Step 3: Verify deployment in list")
 		deployments = listDeployments(t, server.URL)
 		if len(deployments) != 1 {
@@ -122,30 +122,30 @@ func TestE2EStaticSiteHostingWorkflow(t *testing.T) {
 			t.Errorf("Expected deployment ID %s, got %s", deployment.ID, deployments[0].ID)
 		}
 
-		// Step 4: Access static files
+		// Access static files
 		t.Log("Step 4: Test static file serving")
 		testStaticFileAccess(t, server.URL, deployment.ID)
 
-		// Step 5: Upload another site
+		// Upload another site
 		t.Log("Step 5: Upload second site")
 		deployment2 := uploadTestSite(t, server.URL)
 		if deployment2.ID == deployment.ID {
 			t.Error("Second deployment should have different ID")
 		}
 
-		// Step 6: Verify both deployments exist
+		// Verify both deployments exist
 		t.Log("Step 6: Verify multiple deployments")
 		deployments = listDeployments(t, server.URL)
 		if len(deployments) != 2 {
 			t.Errorf("Expected 2 deployments, got %d", len(deployments))
 		}
 
-		// Step 7: Test both sites are accessible independently
+		// Test both sites are accessible independently
 		t.Log("Step 7: Test independent site access")
 		testStaticFileAccess(t, server.URL, deployment.ID)
 		testStaticFileAccess(t, server.URL, deployment2.ID)
 
-		// Step 8: Test deletion functionality
+		// Test deletion functionality
 		t.Log("Step 8: Test deployment deletion")
 		deleteURL := fmt.Sprintf("%s/deployments/%s", server.URL, deployment.ID)
 		req, err := http.NewRequest(http.MethodDelete, deleteURL, nil)
@@ -164,7 +164,7 @@ func TestE2EStaticSiteHostingWorkflow(t *testing.T) {
 			t.Errorf("Expected 200 for delete, got %d", resp.StatusCode)
 		}
 
-		// Step 9: Verify deployment was deleted
+		// Verify deployment was deleted
 		t.Log("Step 9: Verify deployment deleted")
 		deployments = listDeployments(t, server.URL)
 		if len(deployments) != 1 {
@@ -176,7 +176,7 @@ func TestE2EStaticSiteHostingWorkflow(t *testing.T) {
 			t.Errorf("Expected remaining deployment to be %s, got %s", deployment2.ID, deployments[0].ID)
 		}
 
-		// Step 10: Test rollback functionality
+		// Test rollback functionality
 		t.Log("Step 10: Test rollback functionality")
 		rollbackURL := fmt.Sprintf("%s/rollback/%s", server.URL, deployment2.ID)
 		req, err = http.NewRequest(http.MethodPost, rollbackURL, nil)
@@ -194,14 +194,14 @@ func TestE2EStaticSiteHostingWorkflow(t *testing.T) {
 			t.Errorf("Expected 200 for rollback, got %d", resp.StatusCode)
 		}
 
-		// Step 11: Verify rollback created new deployment
+		// Verify rollback created new deployment
 		t.Log("Step 11: Verify rollback created new deployment")
 		deployments = listDeployments(t, server.URL)
 		if len(deployments) != 2 {
 			t.Errorf("Expected 2 deployments after rollback, got %d", len(deployments))
 		}
 
-		// Step 12: Test delete all functionality
+		// Test delete all functionality
 		t.Log("Step 12: Test delete all deployments")
 		deleteAllReq, err := http.NewRequest(http.MethodDelete, server.URL+"/deployments", nil)
 		if err != nil {
@@ -218,14 +218,14 @@ func TestE2EStaticSiteHostingWorkflow(t *testing.T) {
 			t.Errorf("Expected 200 for delete all, got %d", resp.StatusCode)
 		}
 
-		// Step 13: Verify all deployments were deleted
+		// Verify all deployments were deleted
 		t.Log("Step 13: Verify all deployments deleted")
 		deployments = listDeployments(t, server.URL)
 		if len(deployments) != 0 {
 			t.Errorf("Expected 0 deployments after delete all, got %d", len(deployments))
 		}
 
-		// Step 14: Verify deleted site is no longer accessible
+		// Verify deleted site is no longer accessible
 		t.Log("Step 14: Verify all deleted sites inaccessible")
 		resp, err = http.Get(server.URL + "/" + deployment2.ID + "/index.html")
 		if err != nil {
